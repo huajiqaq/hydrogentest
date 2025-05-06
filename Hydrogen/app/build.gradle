@@ -209,9 +209,9 @@ tasks.register("rebuildApk", Zip) {
     
     doLast {
         def tempApk = setApkTimestamp(archiveFile.get().asFile)
-        def (signedApk, signSuccess) = signApk(tempApk)
-        def (alignedApk, alignSuccess) = zipalignApk(signedApk)
-        def finalApk = renameApk(alignedApk, signSuccess)
+        def (alignedApk, alignSuccess) = zipalignApk(tempApk)
+        def (signedApk, signSuccess) = signApk(alignedApk)
+        def finalApk = renameApk(signedApk, signSuccess)
         logger.lifecycle("Build completed: ${finalApk}")
         delete(mergedAssetsDir, mergedLuaDir)
     }
@@ -403,10 +403,38 @@ def setApkTimestamp(File inputFile) {
     def zipFile = new ZipFile(inputFile)
     def out = new ZipArchiveOutputStream(tempFile)
     
+    // 先检查targetSdkVersion
+    def targetSdkVersion = 0
+    zipFile.entries.each { entry ->
+        if (entry.name == "AndroidManifest.xml") {
+            def is = zipFile.getInputStream(entry)
+            def bytes = is.bytes
+            // 简单的解析逻辑，实际可能需要更健壮的解析
+            def manifest = new String(bytes)
+            def matcher = (manifest =~ /targetSdkVersion="(\d+)"/)
+            if (matcher.find()) {
+                targetSdkVersion = matcher.group(1).toInteger()
+            }
+        }
+    }
+    
+    logger.lifecycle("Detected targetSdkVersion: ${targetSdkVersion}")
+    
     try {
         zipFile.entries.each { entry ->
             def newEntry = new ZipArchiveEntry(entry.name)
             newEntry.time = targetTimestamp
+            
+            // 如果targetSdkVersion > 30 且是resources.arsc，则不压缩
+            if (targetSdkVersion > 30 && entry.name == "resources.arsc") {
+                newEntry.method = ZipEntry.STORED
+                // 需要设置必要的STORED参数
+                if (entry.size >= 0) {
+                    newEntry.size = entry.size
+                    newEntry.crc = entry.crc
+                }
+            }
+            
             out.putArchiveEntry(newEntry)
             if (!entry.directory) {
                 out.write(zipFile.getInputStream(entry).bytes)
