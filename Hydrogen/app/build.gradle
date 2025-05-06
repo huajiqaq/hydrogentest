@@ -382,13 +382,12 @@ File renameApk(File apkFile, boolean isSigned) {
     return destFile
 }
 
-import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
-import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
-import org.apache.commons.compress.archivers.zip.ZipFile
 import java.util.TimeZone
 import java.text.SimpleDateFormat
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 
-// 设置APK文件的时间戳为 1981-01-01 01:01:02 UTC
 def setApkTimestamp(File inputFile) {
     TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
     
@@ -401,32 +400,30 @@ def setApkTimestamp(File inputFile) {
     def tempFile = new File(inputFile.parent, inputFile.name + ".tmp")
     
     def zipFile = new ZipFile(inputFile)
-    def out = new ZipArchiveOutputStream(tempFile)
-    
-    def targetSdkVersion = android.defaultConfig.targetSdkVersion.apiLevel
-    
-    logger.lifecycle("Detected targetSdkVersion: ${targetSdkVersion}")
+    def out = new ZipOutputStream(new FileOutputStream(tempFile))
     
     try {
-        zipFile.entries.each { entry ->
-            def newEntry = new ZipArchiveEntry(entry.name)
+        zipFile.entries().each { entry ->
+            def newEntry = new ZipEntry(entry.name)
+            
+            // 设置时间戳
             newEntry.time = targetTimestamp
             
-            // 如果 targetSdkVersion >= 30 且是 resources.arsc，则不压缩
-            if (targetSdkVersion >= 30 && entry.name == "resources.arsc") {
+            // 如果 targetSdk >= 30 且是 resources.arsc，则设置 STORED（不压缩）
+            if (android.defaultConfig.targetSdkVersion.apiLevel >= 30 && 
+                entry.name == "resources.arsc") {
                 newEntry.method = ZipEntry.STORED
-                // 必须设置 size 和 crc（STORED 条目要求）
-                if (entry.size >= 0) {
-                    newEntry.size = entry.size
-                    newEntry.crc = entry.crc
-                }
+                newEntry.size = entry.size
+                newEntry.crc = entry.crc
             }
             
-            out.putArchiveEntry(newEntry)
+            out.putNextEntry(newEntry)
             if (!entry.directory) {
-                out.write(zipFile.getInputStream(entry).bytes)
+                zipFile.getInputStream(entry).withStream { input ->
+                    input.eachByte { out.write(it) }
+                }
             }
-            out.closeArchiveEntry()
+            out.closeEntry()
         }
     } finally {
         out.close()
@@ -438,7 +435,5 @@ def setApkTimestamp(File inputFile) {
     tempFile.renameTo(inputFile)
     
     logger.lifecycle("Successfully set APK timestamp: 1981-01-01 01:01:02 UTC")
-    logger.lifecycle("Ensured resources.arsc is uncompressed (targetSdk >= 30)")
-    
     return inputFile
 }
