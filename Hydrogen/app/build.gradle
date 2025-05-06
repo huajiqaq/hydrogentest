@@ -209,9 +209,9 @@ tasks.register("rebuildApk", Zip) {
     
     doLast {
         def tempApk = setApkTimestamp(archiveFile.get().asFile)
-        def (alignedApk, alignSuccess) = zipalignApk(tempApk)
-        def (signedApk, signSuccess) = signApk(alignedApk)
-        def finalApk = renameApk(signedApk, signSuccess)
+        def (signedApk, signSuccess) = signApk(tempApk)
+        def (alignedApk, alignSuccess) = zipalignApk(signedApk)
+        def finalApk = renameApk(alignedApk, signSuccess)
         logger.lifecycle("Build completed: ${finalApk}")
         delete(mergedAssetsDir, mergedLuaDir)
     }
