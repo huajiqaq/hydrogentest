@@ -403,20 +403,7 @@ def setApkTimestamp(File inputFile) {
     def zipFile = new ZipFile(inputFile)
     def out = new ZipArchiveOutputStream(tempFile)
     
-    // 先检查targetSdkVersion
-    def targetSdkVersion = 0
-    zipFile.entries.each { entry ->
-        if (entry.name == "AndroidManifest.xml") {
-            def is = zipFile.getInputStream(entry)
-            def bytes = is.bytes
-            // 简单的解析逻辑，实际可能需要更健壮的解析
-            def manifest = new String(bytes)
-            def matcher = (manifest =~ /targetSdkVersion="(\d+)"/)
-            if (matcher.find()) {
-                targetSdkVersion = matcher.group(1).toInteger()
-            }
-        }
-    }
+    def targetSdkVersion = android.defaultConfig.targetSdkVersion.apiLevel
     
     logger.lifecycle("Detected targetSdkVersion: ${targetSdkVersion}")
     
@@ -425,10 +412,10 @@ def setApkTimestamp(File inputFile) {
             def newEntry = new ZipArchiveEntry(entry.name)
             newEntry.time = targetTimestamp
             
-            // 如果targetSdkVersion > 30 且是resources.arsc，则不压缩
-            if (targetSdkVersion > 30 && entry.name == "resources.arsc") {
+            // 如果 targetSdkVersion >= 30 且是 resources.arsc，则不压缩
+            if (targetSdkVersion >= 30 && entry.name == "resources.arsc") {
                 newEntry.method = ZipEntry.STORED
-                // 需要设置必要的STORED参数
+                // 必须设置 size 和 crc（STORED 条目要求）
                 if (entry.size >= 0) {
                     newEntry.size = entry.size
                     newEntry.crc = entry.crc
@@ -450,7 +437,8 @@ def setApkTimestamp(File inputFile) {
     inputFile.delete()
     tempFile.renameTo(inputFile)
     
-    logger.lifecycle("Successfully set apk timestamp: 1981-01-01 01:01:02 UTC")
+    logger.lifecycle("Successfully set APK timestamp: 1981-01-01 01:01:02 UTC")
+    logger.lifecycle("Ensured resources.arsc is uncompressed (targetSdk >= 30)")
     
     return inputFile
 }
